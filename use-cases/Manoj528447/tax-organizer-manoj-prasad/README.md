@@ -6,6 +6,7 @@ A full-stack app for an accounting / tax practice manager. Before filing season 
 
 > **Built for the SuperDocs task.** This project was created as a candidate submission for the SuperDocs Round 2 engineer task. It builds *on* SuperDocs; it is not a version *of* SuperDocs.
 
+<!-- SCREENSHOT: replace the line below with a screenshot of the Client Batch dashboard or the SuperDocs Diff Gate. -->
 ![TaxOrganizer AI — Client Batch dashboard](docs/screenshot.png)
 
 ---
@@ -39,7 +40,7 @@ Preflight — environment keys:
 Run the test suite (no live key required):
 
 ```bash
-npm test     # 164 tests, all offline
+npm test     # 177 tests, all offline
 npm run lint # tsc --noEmit type check
 ```
 
@@ -77,13 +78,20 @@ When a real SuperDocs call fails or a job settles as `failed`/`completed` instea
 
 ## Live-verification status (honest)
 
-The test suite covers the local path fully. The live SuperDocs/Gemini path was exercised in a real browser session; here is exactly what was and wasn't confirmed end-to-end:
+The offline test suite (177 tests) covers the local path fully. The live SuperDocs + Gemini path was also exercised end-to-end in a real browser session. **All four SuperDocs API calls are verified live, on multiple clients and across all five client segments:**
 
-- **Upload — verified live.** Real session created, document chunked server-side (e.g. `session taxorg-batch-cli-…, 11 chunks`).
-- **Chat/edit — verified live.** A real `/v1/chat/async` job returned real `pending_changes`; the confirmed live shape is `{ change_id, operation, chunk_id, document_id, old_html, new_html, ai_explanation }`, and the normalizer/UI are mapped and tested against that exact shape.
-- **Approve / Export — built and unit-tested against the documented endpoints; live round-trip not captured.** The remote chat/edit job was intermittent on the test machine (sometimes `awaiting_approval`, sometimes `failed`), and free-tier Gemini quota (20 req/day/model) was reached during testing. Both are external limits, not app defects, and both are handled gracefully.
+- **1. Upload — verified live.** Real session created, document chunked server-side (e.g. `session taxorg-batch-cli-…, 81 chunks: sample-5-high-net-worth.txt`).
+- **2. Chat/edit — verified live.** A real `POST /v1/chat/async` job returned real `pending_changes`; the confirmed live shape is `{ change_id, operation, chunk_id, document_id, old_html, new_html, ai_explanation }`. The normalizer/UI map and HTML-to-text convert this exact shape (tested), and a diff that came back with a real SuperDocs UUID was approved remotely.
+- **3. Approve — verified live.** `POST /v1/chat/{session_id}/approve` confirmed against a genuinely `awaiting_approval` job (terminal: `Approved change via real SuperDocs REST API (diff <uuid>)`), including a diff originating from a live chat/edit — not just pre-seeded local diffs.
+- **4. Export — verified live.** `POST /v1/documents/export` returned a real PDF (e.g. `application/pdf, 42242 bytes`). The exported/copied/printed document contains the human-approved edits (see *Approved-edit consistency* below).
 
-This is logged per the task's guidance that a stated limitation reads as strength, not weakness.
+**Segments verified live (via real file upload):** business / S-Corp, rental, expatriate, HNW, and individual — each classified correctly, pre-filled from the extracted prior-return figures (no fabrication), with segment-appropriate law matching.
+
+### Graceful degradation — observed and handled
+During live testing the Gemini dependency failed three distinct ways, each handled without crashing or fabricating data: a connect-level timeout (IPv6 route stall — fixed with IPv4-first DNS + connect retry), a `429 RESOURCE_EXHAUSTED` free-tier quota limit (classified, not retried — retrying would only burn quota), and a transient `500 INTERNAL` Google-side error (classified and retried; self-cleared). In every case the app fell back to a clearly-labeled generic organizer and said so, rather than inventing values.
+
+### Approved-edit consistency (one source of truth)
+Approving a diff merges its text into the letter document at approval time, so the live grounded preview, Copy Raw Text, Print, and Export all reflect the approved edit identically. Rejecting removes it. This is unit-tested (approve → merged; reject → removed).
 
 ### Known gotcha handled explicitly
 SuperDocs `pending_changes` content can arrive JSON-encoded as a string rather than pre-parsed, and its proposed text is HTML under `new_html`/`old_html`. `superDocsApiService.ts` double-parses defensively (`parsePossiblyDoubleEncoded` / `normalizeProposedChanges`), maps the real field names, and converts HTML to readable text — with tests in `src/tests/superDocsApi.test.ts` proving it against the captured live payload. If a change still can't be mapped, the diff is flagged **unmappable** and the UI shows an honest "content could not be parsed" notice instead of a silently empty diff card.
@@ -147,7 +155,7 @@ src/
     organizerGenerator.ts         client-specific organizer builder
     taxLawAnalyzer.ts             grounded law-update analysis
     persistenceService.ts         JSON persistence + audit recorder
-  tests/                          164 offline tests (batch aggregates api / parser / formatting suites)
+  tests/                          177 offline tests (batch aggregates api / parser / formatting suites)
 ```
 
 ---
@@ -157,7 +165,7 @@ src/
 | Command | Does |
 |---|---|
 | `npm run dev` | Start the app (Express + Vite) on `http://localhost:3000` |
-| `npm test` | Run the full offline test suite (164 tests) |
+| `npm test` | Run the full offline test suite (177 tests) |
 | `npm run lint` | TypeScript type check (`tsc --noEmit`) |
 | `npm run build` | Production build (Vite + esbuild server bundle) |
 | `npm start` | Run the production build |
@@ -169,7 +177,7 @@ src/
 - **Persistence:** local JSON (`data/db.json`) for zero-dependency portability; a PostgreSQL schema is provided in `src/db/schema.ts` as the migration target.
 - **Gemini extraction is non-deterministic:** it sometimes populates full structured fields, sometimes only `priorYearFormSources`. This is intentional and defended against (fall back / "not extracted") rather than papered over.
 - **Law dataset is fabricated test data**, per the task's instruction to invent clients and data; grounding is verified structurally, not against live IRS data.
-- **Live approve/export round-trip** not captured (see *Live-verification status*).
+- **External dependency variability:** the live SuperDocs job status and Gemini free tier are occasionally slow or rate-limited; the app retries transient failures and degrades gracefully (see *Live-verification status*).
 - **E-signature / DMS** are explicitly out of scope per the task's rails.
 
 ---

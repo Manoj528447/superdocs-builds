@@ -166,6 +166,10 @@ async function runTestSuite() {
   });
   const resumed = await batchAgentEngine.runFullPipeline();
   assert(
+    resumed.completedStages.includes('SUPERDOCS_DIFF_GATE'),
+    'Diff gate (stage 5) stays marked complete after all diffs are decided (ticks green like other stages)'
+  );
+  assert(
     resumed.completedStages.includes('EXECUTE_APPROVALS'),
     'After approval, pipeline advances through EXECUTE_APPROVALS (stage 6)'
   );

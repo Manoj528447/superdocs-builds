@@ -403,7 +403,20 @@ class BatchAgentEngine {
           persistenceService.saveCheckpoint(this.checkpoint);
           break;
         }
-        // All diffs decided -> skip re-running the gate, continue the pipeline.
+        // All diffs decided -> the human gate is satisfied. Mark it complete
+        // (so it ticks green like every other finished stage) and continue.
+        // Without this, the gate was skipped past and never recorded as done,
+        // so it never showed complete even after everything was approved.
+        if (!this.checkpoint.completedStages.includes('SUPERDOCS_DIFF_GATE')) {
+          this.checkpoint.completedStages.push('SUPERDOCS_DIFF_GATE');
+        }
+        this.checkpoint.isPaused = false;
+        this.addLog(
+          'SUPERDOCS_DIFF_GATE',
+          'Human gate satisfied: all diffs decided. Releasing the gate and continuing the pipeline.',
+          'success'
+        );
+        persistenceService.saveCheckpoint(this.checkpoint);
         continue;
       }
 
